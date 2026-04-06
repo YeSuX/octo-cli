@@ -2,6 +2,7 @@ import { ValidationError } from "../../errors.js";
 import type { JsonObject, JsonValue, MapStep } from "../../types.js";
 import { isDict } from "../../utils.js";
 
+// 把输入上下文规范化为对象数组，便于后续批处理。
 function toRows(input: JsonValue): JsonObject[] {
   if (Array.isArray(input)) {
     const out: JsonObject[] = [];
@@ -15,6 +16,7 @@ function toRows(input: JsonValue): JsonObject[] {
   throw new ValidationError("map step expects array/object context");
 }
 
+// map 步骤：按 pick 映射字段，生成新的对象数组。
 export function runMapStep(step: MapStep, input: JsonValue): JsonValue {
   const rows = toRows(input);
   const mapped: JsonObject[] = [];

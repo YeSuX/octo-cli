@@ -8,6 +8,20 @@ import { validateAdapters } from "./validate.js";
 import { verifyCommands } from "./verify.js";
 import { defaultDiscoveryRoots } from "./utils.js";
 
+// Commander 异常对象里可能带有 code 字段。
+interface CommanderLikeError extends Error {
+  code?: string;
+}
+
+// 统一识别“展示帮助后退出”这一类正常结束分支。
+function isHelpExit(error: CommanderLikeError): boolean {
+  if (error.message === "(outputHelp)") return true;
+  if (error.code === "commander.help") return true;
+  if (error.code === "commander.helpDisplayed") return true;
+  return false;
+}
+
+// 注册内建命令：list / validate / verify。
 function registerBuiltinCommands(program: Command): void {
   program
     .command("list")
@@ -59,31 +73,43 @@ function registerBuiltinCommands(program: Command): void {
     });
 }
 
+// 创建并装配完整 CLI 程序实例。
 export async function createCliProgram(): Promise<Command> {
   const program = new Command();
   program.name("octo").description("OctoCLI Phase A").version("0.1.0");
 
   registerBuiltinCommands(program);
 
+  // 启动流程：先跑 startup hooks，再发现 adapter，最后挂载动态命令。
   await runHooks("onStartup", { cwd: process.cwd() });
   await discoverClis(defaultDiscoveryRoots());
   registerAllCommands(program, getRegistry());
 
   program.showHelpAfterError();
   program.exitOverride((error) => {
-    if (error.code === "commander.helpDisplayed") return;
+    if (isHelpExit(error)) return;
     throw error;
   });
 
   return program;
 }
 
+// CLI 运行入口：负责 parse、帮助输出和统一异常处理。
 export async function runCli(argv: string[]): Promise<void> {
   try {
     const program = await createCliProgram();
+    if (argv.length <= 2) {
+      program.outputHelp();
+      process.exitCode = 0;
+      return;
+    }
     await program.parseAsync(argv);
   } catch (error) {
     if (error instanceof Error) {
+      if (isHelpExit(error)) {
+        process.exitCode = 0;
+        return;
+      }
       handleCliError(error);
     } else {
       handleCliError(new Error(String(error)));

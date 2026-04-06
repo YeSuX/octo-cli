@@ -10,6 +10,7 @@ import type { Arg, CliCommand, JsonValue } from "./types.js";
 import { coerceArgValue } from "./utils.js";
 import { executePipeline } from "./pipeline/executor.js";
 
+// 参数预处理：默认值填充 + required 检查 + 类型转换。
 export function coerceAndValidateArgs(
   args: Arg[],
   raw: Record<string, string | number | boolean | undefined>,
@@ -36,6 +37,7 @@ export function coerceAndValidateArgs(
   return out;
 }
 
+// 给任意异步执行器增加超时保护。
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<T>((_, reject) => {
@@ -48,6 +50,12 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   }
 }
 
+// 命令执行统一入口：
+// 1) 参数处理
+// 2) hook
+// 3) browser 能力拦截（Phase A）
+// 4) 执行 func 或 pipeline
+// 5) 空结果判断
 export async function executeCommand(
   cmd: CliCommand,
   rawKwargs: Record<string, string | number | boolean | undefined>,

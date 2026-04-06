@@ -1,6 +1,7 @@
 import { CommandExecutionError } from "../../errors.js";
 import type { FetchStep, JsonValue } from "../../types.js";
 
+// fetch 步骤：请求远程 JSON 并返回解析结果。
 export async function runFetchStep(step: FetchStep): Promise<JsonValue> {
   const response = await fetch(step.url, {
     method: step.method ?? "GET",

@@ -2,6 +2,7 @@ import { ValidationError } from "../../errors.js";
 import type { JsonObject, JsonValue, SortStep } from "../../types.js";
 import { isDict } from "../../utils.js";
 
+// 确保 sort 的输入为对象数组。
 function asRows(input: JsonValue): JsonObject[] {
   if (!Array.isArray(input)) throw new ValidationError("sort step expects array context");
   const out: JsonObject[] = [];
@@ -12,6 +13,7 @@ function asRows(input: JsonValue): JsonObject[] {
   return out;
 }
 
+// sort 步骤：按指定字段做字符串比较排序。
 export function runSortStep(step: SortStep, input: JsonValue): JsonValue {
   const rows = asRows(input);
   const order = step.order ?? "asc";

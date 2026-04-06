@@ -4,12 +4,14 @@ import { CliError, printCliError, toCliError } from "./errors.js";
 import { render } from "./output.js";
 import type { CliCommand } from "./types.js";
 
+// 所有动态命令共享的通用选项。
 interface CommonOptions {
   format?: "table" | "json" | "yaml" | "csv";
   verbose?: boolean;
   timeout?: string;
 }
 
+// 把 positional 参数按命令声明映射为 kwargs。
 function collectKwargs(
   cmd: CliCommand,
   positional: string[],
@@ -23,6 +25,7 @@ function collectKwargs(
   return kwargs;
 }
 
+// CLI 层统一错误输出和退出码设置。
 export function handleCliError(error: Error): never {
   const cliError = toCliError(error);
   printCliError(cliError);
@@ -30,6 +33,7 @@ export function handleCliError(error: Error): never {
   throw cliError;
 }
 
+// 把单个 CliCommand 挂载为 commander 子命令。
 export function registerCommandToProgram(siteProgram: Command, cmd: CliCommand): void {
   const command = siteProgram.command(cmd.name).description(cmd.description);
   for (const arg of cmd.args ?? []) {
@@ -57,6 +61,7 @@ export function registerCommandToProgram(siteProgram: Command, cmd: CliCommand):
   });
 }
 
+// 批量挂载所有命令，并按 site 分组。
 export function registerAllCommands(program: Command, commands: CliCommand[]): void {
   const groups = new Map<string, Command>();
   for (const cmd of commands) {

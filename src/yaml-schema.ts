@@ -10,10 +10,12 @@ import type {
 } from "./types.js";
 import { isDict } from "./utils.js";
 
+// YAML 校验白名单。
 const STEP_SET = new Set<string>(["fetch", "map", "filter", "sort", "limit", "debug"]);
 const STRATEGY_SET = new Set<string>(["public", "cookie", "header", "intercept", "ui"]);
 const FORMAT_SET = new Set<string>(["table", "json", "yaml", "csv"]);
 
+// 读取必填字符串字段。
 function requiredString(obj: JsonObject, key: string, source: string): string {
   const value = obj[key];
   if (typeof value !== "string" || value.trim() === "") {
@@ -22,6 +24,7 @@ function requiredString(obj: JsonObject, key: string, source: string): string {
   return value;
 }
 
+// 读取可选布尔字段。
 function optionalBoolean(obj: JsonObject, key: string): boolean | undefined {
   const value = obj[key];
   if (value === undefined) return undefined;
@@ -29,6 +32,7 @@ function optionalBoolean(obj: JsonObject, key: string): boolean | undefined {
   return value;
 }
 
+// 读取可选字符串数组字段。
 function optionalStringArray(obj: JsonObject, key: string): string[] | undefined {
   const value = obj[key];
   if (value === undefined) return undefined;
@@ -41,6 +45,7 @@ function optionalStringArray(obj: JsonObject, key: string): string[] | undefined
   return out;
 }
 
+// 解析 args 字段并做类型校验。
 function parseArgs(obj: JsonObject, source: string): Arg[] | undefined {
   const value = obj.args;
   if (value === undefined) return undefined;
@@ -73,6 +78,7 @@ function parseArgs(obj: JsonObject, source: string): Arg[] | undefined {
   return args;
 }
 
+// 解析 pipeline 字段并做 step 级校验。
 function parsePipeline(obj: JsonObject, source: string): PipelineStep[] | undefined {
   const value = obj.pipeline;
   if (value === undefined) return undefined;
@@ -150,6 +156,7 @@ function parsePipeline(obj: JsonObject, source: string): PipelineStep[] | undefi
   return steps;
 }
 
+// YAML -> CliCommand 的主转换入口。
 export function parseYamlCli(data: JsonValue, source: string): CliCommand {
   if (!isDict(data)) throw new ValidationError(`${source}: root must be an object`);
 
@@ -211,12 +218,14 @@ export function parseYamlCli(data: JsonValue, source: string): CliCommand {
   };
 }
 
+// 把原始值收窄为 Strategy 枚举。
 function toStrategy(value: JsonValue | undefined): Strategy | undefined {
   if (typeof value !== "string") return undefined;
   if (!STRATEGY_SET.has(value)) return undefined;
   return value as Strategy;
 }
 
+// 把原始值收窄为 OutputFormat 枚举。
 function toOutputFormat(value: JsonValue | undefined): OutputFormat | undefined {
   if (typeof value !== "string") return undefined;
   if (!FORMAT_SET.has(value)) return undefined;

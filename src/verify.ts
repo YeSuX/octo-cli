@@ -3,6 +3,7 @@ import { getRegistry, fullName } from "./registry.js";
 import type { CliCommand, VerifyResult } from "./types.js";
 import { splitTarget } from "./utils.js";
 
+// 根据 verify target 选择命令集合。
 function selectCommands(target: string | undefined): CliCommand[] {
   const commands = getRegistry();
   if (!target) return commands;
@@ -11,6 +12,7 @@ function selectCommands(target: string | undefined): CliCommand[] {
   return commands.filter((cmd) => cmd.site === site);
 }
 
+// smoke verify：验证命令能被正常执行并返回结构化结果。
 export async function verifyCommands(target?: string): Promise<VerifyResult[]> {
   const selected = selectCommands(target);
   const results: VerifyResult[] = [];
