@@ -2,80 +2,93 @@
 
 ## 1. 文档目标
 
-本文档用于指导你从零到一完成 `yourcli` 的 **Phase A：最小可用 CLI 内核**。
+本文档用于指导你从零到一完成 `octo` 的 **Phase A：最小可用 CLI 内核**。
 
-这份计划不追求复刻 OpenCLI 全量能力，而是优先建立一个：
+本阶段不追求复刻 OpenCLI 的全部能力，而是优先建立一个稳定、可扩展、便于后续接入浏览器能力的基础内核。完成后，它至少应具备以下特性：
 
 - 能启动
 - 能发现 adapter
 - 能执行 YAML / TS 命令
 - 能统一输出
 - 能统一报错
-- 能被后续浏览器能力平滑接入
+- 能被后续 browser bridge / daemon 平滑接入
 
-的稳定内核。
+一句话概括这阶段的目标：
+
+**先把“命令是数据、执行是引擎、CLI 只是壳”这条主线做对。**
 
 ---
 
 ## 2. Phase A 范围
 
-### 2.1 本阶段目标
+### 2.1 本阶段要做什么
 
 在不依赖浏览器、daemon、extension、CDP 的前提下，完成以下能力：
 
-- `yourcli list`
-- `yourcli validate`
-- `yourcli verify`
-- 动态发现 `src/clis/**` 与 `~/.yourcli/clis/**` 下的 YAML / TS adapters
+- `octo list`
+- `octo validate`
+- `octo verify`
+- 动态发现 `src/clis/**` 与 `~/.octo/clis/**` 下的 YAML / TS adapters
 - 命令注册表
 - 统一执行入口
 - 统一输出格式
 - 统一错误模型
 - 最小测试体系
 
-### 2.2 明确不做
+### 2.2 本阶段明确不做什么
 
-本阶段不做以下内容：
+以下能力只预留扩展点，不进入 Phase A：
 
 - 浏览器 Bridge
 - daemon
 - Electron / CDP
 - 插件安装系统
 - manifest 启动优化
-- AI 探索 / 录制 / 生成能力
+- AI 探索 / 录制 / 生成
 - 外部 CLI passthrough
 
-这些能力在架构设计上要留扩展口，但不进入 Phase A 开发范围。
+这样做的原因很简单：Phase A 的目标是先建立稳定内核，而不是过早进入复杂集成。
 
 ---
 
 ## 3. 总体实现思路
 
-参考 OpenCLI 的做法，Phase A 采用如下主链路：
+推荐把 Phase A 的主链路设计为：
 
-1. `main.ts` 启动
+1. `main.ts` 启动 CLI
 2. `discovery.ts` 扫描并加载 adapters
-3. adapter 通过 `registry.ts` 注册成统一的 `CliCommand`
+3. adapter 通过 `registry.ts` 注册为统一的 `CliCommand`
 4. `cli.ts` 注册内建命令
 5. `commanderAdapter.ts` 把 registry 命令挂到 Commander
-6. `execution.ts` 执行 `func` 或 `pipeline`
-7. `output.ts` 输出结果
-8. `errors.ts` 统一错误与退出码
+6. `execution.ts` 负责执行 `func` 或 `pipeline`
+7. `output.ts` 负责渲染输出
+8. `errors.ts` 提供统一错误与退出码
 
-这一阶段的核心原则是：
+这一阶段的核心原则：
 
 - 把“命令定义”和“命令执行”分开
 - 把“CLI 框架逻辑”和“业务逻辑”分开
-- 把“适配器生态”和“CLI 主体”解耦
+- 把“adapter 生态”和“CLI 主体”解耦
+
+对应的数据流如下：
+
+```text
+adapter(yaml/ts)
+  -> registry
+  -> commander command
+  -> executeCommand()
+  -> render()
+  -> stdout / stderr
+```
 
 ---
 
 ## 4. 目录建议
 
-建议 Phase A 先落到以下最小目录：
+建议从一开始就按下面的最小目录组织，后续升级到 Phase B / C 时改动最小：
 
 ```text
-yourcli/
+octo/
   src/
     main.ts
     cli.ts
@@ -90,11 +103,24 @@ yourcli/
     verify.ts
     yaml-schema.ts
     utils.ts
+    pipeline/
+      executor.ts
+      steps/
+        fetch.ts
+        map.ts
+        filter.ts
+        limit.ts
     clis/
       demo/
         hello.yaml
         ping.ts
   tests/
+    fixtures/
+      good-yaml/
+      bad-yaml-missing-name/
+      bad-yaml-invalid-pipeline/
+      good-ts/
+      bad-ts-syntax/
     registry.test.ts
     discovery.test.ts
     execution.test.ts
@@ -108,181 +134,323 @@ yourcli/
   vitest.config.ts
 ```
 
-`pipeline/` 是否要在 Phase A 单独拆目录，取决于你打算把 YAML 执行器做多完整：
-
-- 如果只做极简版，可以先把 pipeline 执行逻辑放进 `execution.ts`
-- 如果你想后续平滑升级，建议现在就建 `src/pipeline/`
-
-我建议现在就建 `src/pipeline/`，即使只做最少几个 step，也能减少后续重构成本。
+建议现在就创建 `src/pipeline/`。即便第一版只支持少量 step，独立目录也能降低后续重构成本。
 
 ---
 
-## 5. 核心模块计划
+## 5. 核心设计
 
-## 5.1 `registry.ts`
+## 5.1 命令模型：`registry.ts`
 
 ### 目标
 
-建立全系统统一命令模型。
+建立全系统统一命令模型，所有 adapter 最终都要归一化为 `CliCommand`。
 
-### 需要定义
+### 建议类型
 
-- `Strategy` 枚举
-- `Arg` 类型
-- `CliCommand` 类型
-- `CliOptions` 类型
-- `cli()` 注册函数
-- `registerCommand()`
-- `getRegistry()`
-- `fullName()`
+```ts
+export type Strategy = 'public' | 'cookie' | 'header' | 'intercept' | 'ui';
+export type OutputFormat = 'table' | 'json' | 'yaml' | 'csv';
+export type ArgType = 'string' | 'number' | 'boolean';
 
-### 建议字段
+export interface Arg {
+  name: string;
+  description?: string;
+  type?: ArgType;
+  required?: boolean;
+  default?: unknown;
+}
 
-`CliCommand` 建议至少包含：
-
-- `site`
-- `name`
-- `description`
-- `strategy`
-- `browser`
-- `args`
-- `columns`
-- `func`
-- `pipeline`
-- `timeoutSeconds`
-- `navigateBefore`
-- `defaultFormat`
-- `aliases`
-- `source`
+export interface CliCommand {
+  site: string;
+  name: string;
+  description: string;
+  aliases?: string[];
+  strategy?: Strategy;
+  browser?: boolean;
+  args?: Arg[];
+  columns?: string[];
+  func?: (
+    page: null,
+    kwargs: Record<string, unknown>,
+    debug?: boolean,
+  ) => Promise<unknown>;
+  pipeline?: PipelineStep[];
+  timeoutSeconds?: number;
+  navigateBefore?: boolean | string;
+  defaultFormat?: OutputFormat;
+  source?: string;
+}
+```
 
 ### 设计要求
 
-- registry 存在 `globalThis`
-- 支持 alias 映射到同一 command 实例
-- 后注册同名命令可以覆盖前注册命令
+- registry 挂在 `globalThis`
+- alias 指向同一个 command 实例
+- 后注册同名命令允许覆盖前注册命令
 - 不依赖 Commander
 - 不依赖浏览器能力
 
+### 推荐实现
+
+```ts
+type RegistryStore = Map<string, CliCommand>;
+
+const REGISTRY_KEY = '__octo_registry__';
+
+function getStore(): RegistryStore {
+  const g = globalThis as typeof globalThis & {
+    [REGISTRY_KEY]?: RegistryStore;
+  };
+  g[REGISTRY_KEY] ??= new Map();
+  return g[REGISTRY_KEY]!;
+}
+
+export function fullName(cmd: Pick<CliCommand, 'site' | 'name'>): string {
+  return `${cmd.site}/${cmd.name}`;
+}
+
+export function registerCommand(command: CliCommand): CliCommand {
+  const store = getStore();
+  const key = fullName(command);
+
+  store.set(key, command);
+
+  for (const alias of command.aliases ?? []) {
+    store.set(`${command.site}/${alias}`, command);
+  }
+
+  return command;
+}
+
+export const cli = registerCommand;
+
+export function getRegistry(): CliCommand[] {
+  const unique = new Map<string, CliCommand>();
+  for (const command of getStore().values()) {
+    unique.set(fullName(command), command);
+  }
+  return [...unique.values()].sort((a, b) =>
+    fullName(a).localeCompare(fullName(b)),
+  );
+}
+```
+
 ### 完成定义
 
-- 能从任意模块调用 `cli({...})` 完成注册
-- `getRegistry()` 可以稳定返回所有命令
-- `fullName({site:'demo',name:'hello'})` 输出 `demo/hello`
+- 任意模块可调用 `cli({...})` 注册命令
+- `getRegistry()` 能稳定返回命令列表
+- `fullName({ site: 'demo', name: 'hello' })` 输出 `demo/hello`
 
 ---
 
-## 5.2 `discovery.ts`
+## 5.2 动态发现：`discovery.ts`
 
 ### 目标
 
 动态发现并加载 YAML / TS adapters。
 
-### 第一版支持来源
+### Phase A 支持来源
 
 - 内置目录：`src/clis`
-- 用户目录：`~/.yourcli/clis`
+- 用户目录：`~/.octo/clis`
 
 ### 扫描规则
-
-目录约定：
 
 ```text
 src/clis/<site>/*.yaml
 src/clis/<site>/*.yml
 src/clis/<site>/*.ts
-~/.yourcli/clis/<site>/*.yaml
-~/.yourcli/clis/<site>/*.yml
-~/.yourcli/clis/<site>/*.ts
+~/.octo/clis/<site>/*.yaml
+~/.octo/clis/<site>/*.yml
+~/.octo/clis/<site>/*.ts
 ```
 
-### 建议实现
-
-拆成这些函数：
+### 推荐拆分函数
 
 - `discoverClis(...dirs)`
 - `discoverClisFromFs(dir)`
 - `registerYamlCli(filePath, defaultSite)`
+- `loadTsCli(filePath)`
 - `isCliModule(filePath)`
 
-### TS adapter 加载规则
+### 推荐实现思路
 
-- `import()` 模块
-- 模块导入时自行调用 `cli(...)` 注册
+```ts
+import { readdir } from 'node:fs/promises';
+import path from 'node:path';
+import yaml from 'js-yaml';
+import { pathToFileURL } from 'node:url';
+
+export async function discoverClis(...roots: string[]): Promise<void> {
+  for (const root of roots) {
+    const files = await discoverClisFromFs(root);
+    for (const file of files) {
+      try {
+        if (file.endsWith('.ts')) {
+          await import(pathToFileURL(file).href);
+        } else {
+          await registerYamlCli(file);
+        }
+      } catch (error) {
+        console.warn(`[discover] failed to load ${file}`, error);
+      }
+    }
+  }
+}
+
+export async function discoverClisFromFs(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await discoverClisFromFs(fullPath)));
+      continue;
+    }
+
+    if (!isCliModule(fullPath)) continue;
+    files.push(fullPath);
+  }
+
+  return files;
+}
+
+export function isCliModule(filePath: string): boolean {
+  if (filePath.endsWith('.d.ts')) return false;
+  if (filePath.endsWith('.test.ts')) return false;
+  return /\.(ya?ml|ts)$/.test(filePath);
+}
+```
+
+### YAML adapter 的处理方式
+
+YAML adapter 建议做三件事：
+
+1. 读取并解析 YAML
+2. 做最小 schema 校验
+3. 转成 `CliCommand` 后注册
+
+示例：
+
+```ts
+export async function registerYamlCli(filePath: string): Promise<void> {
+  const raw = await fs.readFile(filePath, 'utf8');
+  const parsed = yaml.load(raw) as Record<string, unknown>;
+  const command = parseYamlCli(parsed, filePath);
+  cli(command);
+}
+```
+
+### TS adapter 的处理方式
+
+- 使用 `import()` 动态加载
+- 模块导入时自行调用 `cli(...)`
 - 第一版不做 manifest stub 和懒加载
-
-### YAML adapter 加载规则
-
-- 读取文件
-- `js-yaml` 解析
-- 做最小 schema 校验
-- 转为 `CliCommand`
-- 直接注册到 registry
 
 ### 风险点
 
 - 用户目录不存在时应静默跳过
-- TS 文件里测试文件和声明文件要跳过
-- YAML 解析失败不能拖垮整个 CLI 启动，应该记录 warning
+- `.test.ts`、`.d.ts` 不应被加载
+- YAML 解析失败不能拖垮 CLI 启动，只记录 warning
 
 ### 完成定义
 
-- `src/clis/demo/hello.yaml` 会自动出现在 `yourcli list`
-- `src/clis/demo/ping.ts` 会自动出现在 `yourcli list`
-- 用户目录下新增 adapter 不需要改主程序代码
+- `src/clis/demo/hello.yaml` 会自动出现在 `octo list`
+- `src/clis/demo/ping.ts` 会自动出现在 `octo list`
+- 用户目录新增 adapter 不需要修改主程序代码
 
 ---
 
-## 5.3 `commanderAdapter.ts`
+## 5.3 命令装配：`commanderAdapter.ts`
 
 ### 目标
 
 把 registry 中的 `CliCommand` 动态挂成 Commander 命令。
 
-### 只负责三件事
+### 它只负责三件事
 
 - 注册 site / command
 - 收集 positional args 和 named options
 - 调用 `executeCommand()` 并渲染输出 / 处理异常
 
-### 不负责
+### 它不负责什么
 
 - adapter 执行业务
 - pipeline 解析
 - browser session
 - discovery
 
-### 建议函数
-
-- `registerAllCommands(program)`
-- `registerCommandToProgram(siteCmd, cmd)`
-- `normalizeArgValue(argType, value, name)`
-
-### Commander 层统一选项
-
-建议所有动态命令统一支持：
+### 建议统一动态选项
 
 - `-f, --format <fmt>`
 - `-v, --verbose`
+- `--timeout <seconds>`
 
-后续再扩展：
+### 推荐实现
 
-- `--timeout`
-- `--raw`
+```ts
+import { Command } from 'commander';
+
+export function registerAllCommands(program: Command, commands: CliCommand[]) {
+  const siteGroups = new Map<string, Command>();
+
+  for (const cmd of commands) {
+    let siteProgram = siteGroups.get(cmd.site);
+    if (!siteProgram) {
+      siteProgram = program.command(cmd.site);
+      siteGroups.set(cmd.site, siteProgram);
+    }
+    registerCommandToProgram(siteProgram, cmd);
+  }
+}
+
+function registerCommandToProgram(siteProgram: Command, cmd: CliCommand) {
+  const command = siteProgram.command(cmd.name).description(cmd.description);
+
+  for (const arg of cmd.args ?? []) {
+    const token = arg.required ? `<${arg.name}>` : `[${arg.name}]`;
+    command.argument(token, arg.description);
+  }
+
+  command.option('-f, --format <fmt>', 'output format');
+  command.option('-v, --verbose', 'verbose logging');
+  command.option('--timeout <seconds>', 'override timeout');
+
+  command.action(async (...received) => {
+    const commanderCommand = received.at(-1);
+    const positional = received.slice(0, -1);
+    const options = commanderCommand.opts();
+    const kwargs = collectKwargs(cmd, positional, options);
+
+    try {
+      const result = await executeCommand(cmd, kwargs, Boolean(options.verbose));
+      render(result, {
+        fmt: options.format ?? cmd.defaultFormat,
+        columns: cmd.columns,
+      });
+    } catch (error) {
+      handleCliError(error);
+    }
+  });
+}
+```
 
 ### 错误处理要求
 
 - `executeCommand()` 抛出的 typed error 由这里统一展示
 - 这里负责设置 `process.exitCode`
-- 这里不吞掉调试信息
+- 不吞掉调试信息
 
 ### 完成定义
 
-- 执行 `yourcli demo hello --limit 3 -f json` 能正确透传参数
-- 错误命令能输出统一格式的报错信息
+- `octo demo hello --limit 3 -f json` 能正确透传参数
+- 错误命令能输出统一格式报错
 
 ---
 
-## 5.4 `execution.ts`
+## 5.4 执行引擎：`execution.ts`
 
 ### 目标
 
@@ -297,46 +465,211 @@ src/clis/<site>/*.ts
 5. `onAfterExecute` hook
 6. 返回结果给 caller
 
-注意：
+### Phase A 的现实策略
 
-- 输出渲染建议仍放在 `commanderAdapter.ts`
-- `execution.ts` 负责“执行”，不直接 `console.log`
+虽然要预留 browser 判断位，但本阶段可以先采用：
 
-### 第一阶段的现实实现
+- `browser === false` 或 `strategy === 'public'`：直接执行
+- 其他 browser 相关命令：直接抛 `CommandExecutionError`
 
-虽然会保留“是否需要 browser session”的判断位置，但本阶段可以先采用：
+这样 Phase B 接浏览器时不用推翻主流程。
 
-- `browser === false` 或 `strategy === public`：直接执行
-- 其他 browser 相关命令：直接抛出 `CommandExecutionError`，提示“Phase A 暂不支持 browser command”
+### 推荐实现
 
-这样后续接入浏览器能力时不用推翻主流程。
+```ts
+export async function executeCommand(
+  cmd: CliCommand,
+  rawKwargs: Record<string, unknown>,
+  debug = false,
+): Promise<unknown> {
+  const kwargs = coerceAndValidateArgs(cmd.args ?? [], rawKwargs);
 
-### 建议子函数
+  await runHooks('onBeforeExecute', { cmd, kwargs });
 
-- `coerceAndValidateArgs()`
-- `runCommand()`
-- `executePipeline()` 或委托到 `pipeline/executor.ts`
-- `ensureRequiredEnv()`，如果你决定现在就留 env 校验口
+  if (cmd.browser && cmd.strategy !== 'public') {
+    throw new CommandExecutionError(
+      `Command ${fullName(cmd)} requires browser runtime`,
+      { hint: 'Phase A 暂不支持 browser command' },
+    );
+  }
 
-### 支持的命令执行模式
+  const timeoutMs = (cmd.timeoutSeconds ?? 30) * 1000;
+  const runner = async () => {
+    if (cmd.func) {
+      return cmd.func(null, kwargs, debug);
+    }
+    if (cmd.pipeline) {
+      return executePipeline(cmd.pipeline, kwargs);
+    }
+    throw new CommandExecutionError(`Command ${fullName(cmd)} has no executor`);
+  };
 
-- `func(page, kwargs, debug)`，Phase A 中 `page` 固定为 `null`
-- `pipeline`，用于 YAML adapters
+  const result = await withTimeout(runner(), timeoutMs);
+
+  await runHooks('onAfterExecute', { cmd, kwargs, result });
+  return result;
+}
+```
+
+### 参数校验建议
+
+```ts
+export function coerceAndValidateArgs(
+  args: Arg[],
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  for (const arg of args) {
+    let value = raw[arg.name];
+
+    if (value == null && arg.default !== undefined) {
+      value = arg.default;
+    }
+
+    if (arg.required && value == null) {
+      throw new ArgumentError(`Missing required arg: ${arg.name}`);
+    }
+
+    if (value != null) {
+      result[arg.name] = normalizeArgValue(arg.type ?? 'string', value, arg.name);
+    }
+  }
+
+  return result;
+}
+```
 
 ### 完成定义
 
 - TS adapter `func` 能跑通
 - YAML adapter `pipeline` 能跑通
-- 参数类型错误时抛 `ArgumentError`
-- 超时时抛 `TimeoutError`
+- 参数类型错误抛 `ArgumentError`
+- 超时抛 `TimeoutError`
 
 ---
 
-## 5.5 `output.ts`
+## 5.5 YAML 执行器：`pipeline/`
 
 ### 目标
 
-建立后续长期复用的统一输出层。
+为 YAML adapter 提供一个足够小、足够稳定的执行引擎。
+
+### 第一版建议 step 集
+
+- `fetch`
+- `map`
+- `filter`
+- `limit`
+- `sort`
+- `tap` 或 `debug`
+
+### 不建议在 Phase A 做的 step
+
+- `navigate`
+- `click`
+- `type`
+- `wait`
+- `intercept`
+- `download`
+
+这些天然属于浏览器阶段。
+
+### YAML 能力边界
+
+第一版重点支持“公共数据获取与变换”：
+
+- 拉取远程 HTTP JSON
+- 字段映射
+- 基础筛选
+- 排序
+- 截断
+
+### 推荐的 step 结构
+
+```ts
+export type PipelineStep =
+  | { use: 'fetch'; url: string; method?: 'GET' | 'POST' }
+  | { use: 'map'; pick: Record<string, string> }
+  | { use: 'filter'; field: string; equals?: string | number | boolean }
+  | { use: 'sort'; field: string; order?: 'asc' | 'desc' }
+  | { use: 'limit'; count: number };
+```
+
+### 推荐实现
+
+```ts
+export async function executePipeline(
+  steps: PipelineStep[],
+  kwargs: Record<string, unknown>,
+): Promise<unknown> {
+  let context: unknown = undefined;
+
+  for (const step of steps) {
+    switch (step.use) {
+      case 'fetch':
+        context = await runFetchStep(step, kwargs);
+        break;
+      case 'map':
+        context = runMapStep(step, context);
+        break;
+      case 'filter':
+        context = runFilterStep(step, context);
+        break;
+      case 'sort':
+        context = runSortStep(step, context);
+        break;
+      case 'limit':
+        context = runLimitStep(step, context);
+        break;
+      default:
+        throw new ValidationError(`Unknown pipeline step: ${(step as any).use}`);
+    }
+  }
+
+  return context;
+}
+```
+
+### 一个最小 YAML adapter 示例
+
+`src/clis/demo/hello.yaml`
+
+```yaml
+site: demo
+name: hello
+description: Fetch demo posts
+strategy: public
+browser: false
+defaultFormat: table
+columns:
+  - id
+  - title
+args:
+  - name: limit
+    type: number
+    required: false
+    default: 3
+pipeline:
+  - use: fetch
+    url: https://jsonplaceholder.typicode.com/posts
+  - use: map
+    pick:
+      id: id
+      title: title
+  - use: limit
+    count: 3
+```
+
+如果后面要支持 `${limit}` 这类动态模板，可以在 `fetch` 或 `limit` step 中再补变量替换逻辑，但 Phase A 不必一次做满。
+
+---
+
+## 5.6 统一输出：`output.ts`
+
+### 目标
+
+建立长期复用的统一输出层。
 
 ### 第一阶段必须支持
 
@@ -345,35 +678,63 @@ src/clis/<site>/*.ts
 - `yaml`
 - `csv`
 
-### 建议能力
+### 设计建议
 
 - 数组对象渲染表格
-- 单对象也能转成单行表格
-- 非 TTY 默认从 `table` 自动降级到 `yaml`，这一点可以参考 OpenCLI
-- 保留 `columns` 参数控制输出列顺序
+- 单对象自动转单行表格
+- 非 TTY 默认从 `table` 自动降级到 `yaml`
+- 支持 `columns` 控制列顺序
 
-### 建议函数
+### 推荐接口
 
-- `render(data, opts)`
-- `renderTable()`
-- `renderJson()`
-- `renderYaml()`
-- `renderCsv()`
-- `normalizeRows()`
+```ts
+export function render(
+  data: unknown,
+  opts: {
+    fmt?: OutputFormat;
+    columns?: string[];
+    title?: string;
+    elapsed?: number;
+  } = {},
+): void {
+  const fmt = resolveFormat(opts.fmt);
+
+  switch (fmt) {
+    case 'json':
+      return renderJson(data);
+    case 'yaml':
+      return renderYaml(data);
+    case 'csv':
+      return renderCsv(data, opts.columns);
+    default:
+      return renderTable(data, opts.columns);
+  }
+}
+```
+
+### 表格输出建议
+
+```ts
+function normalizeRows(data: unknown): Record<string, unknown>[] {
+  if (Array.isArray(data)) return data as Record<string, unknown>[];
+  if (data && typeof data === 'object') return [data as Record<string, unknown>];
+  return [{ value: data }];
+}
+```
 
 ### 完成定义
 
-- 同一份结果可被四种格式正确渲染
+- 同一份结果可用四种格式正确渲染
 - `columns` 能控制列顺序
-- 空结果表现一致
+- 空结果行为一致
 
 ---
 
-## 5.6 `errors.ts`
+## 5.7 统一错误：`errors.ts`
 
 ### 目标
 
-建立统一错误体系，避免后续靠字符串匹配兜底。
+建立统一错误体系，避免后续全靠字符串匹配。
 
 ### Phase A 至少定义
 
@@ -384,19 +745,41 @@ src/clis/<site>/*.ts
 - `AuthRequiredError`
 - `CommandExecutionError`
 - `AdapterLoadError`
-
-### 建议补充
-
-- `ConfigError`
 - `ValidationError`
 - `UnknownCommandError`
 
-### 每个错误建议字段
+### 建议结构
 
-- `message`
-- `hint`
-- `code`
-- `exitCode`
+```ts
+export class CliError extends Error {
+  code: string;
+  exitCode: number;
+  hint?: string;
+
+  constructor(
+    message: string,
+    opts: { code?: string; exitCode?: number; hint?: string } = {},
+  ) {
+    super(message);
+    this.name = new.target.name;
+    this.code = opts.code ?? 'CLI_ERROR';
+    this.exitCode = opts.exitCode ?? 1;
+    this.hint = opts.hint;
+  }
+}
+
+export class ArgumentError extends CliError {
+  constructor(message: string, hint?: string) {
+    super(message, { code: 'ARGUMENT_ERROR', exitCode: 2, hint });
+  }
+}
+
+export class TimeoutError extends CliError {
+  constructor(message = 'Command timed out') {
+    super(message, { code: 'TIMEOUT', exitCode: 75 });
+  }
+}
+```
 
 ### 退出码建议
 
@@ -406,14 +789,31 @@ src/clis/<site>/*.ts
 - `66` 空结果
 - `75` 超时 / 临时失败
 
+### Commander 层的统一处理
+
+```ts
+export function handleCliError(error: unknown): never {
+  if (error instanceof CliError) {
+    console.error(`Error: ${error.message}`);
+    if (error.hint) console.error(`Hint: ${error.hint}`);
+    process.exitCode = error.exitCode;
+    throw error;
+  }
+
+  console.error(error);
+  process.exitCode = 1;
+  throw error instanceof Error ? error : new Error(String(error));
+}
+```
+
 ### 完成定义
 
-- 所有模块抛错优先使用 typed error
+- 各模块抛错优先使用 typed error
 - `commanderAdapter.ts` 能根据 error 类型设置 exit code
 
 ---
 
-## 5.7 `hooks.ts`
+## 5.8 Hook 框架：`hooks.ts`
 
 ### 目标
 
@@ -425,23 +825,48 @@ src/clis/<site>/*.ts
 - `onBeforeExecute`
 - `onAfterExecute`
 
-### 设计建议
+### 推荐实现
 
-- 和 OpenCLI 一样挂在 `globalThis`
-- hook 异常不应拖垮主执行流程，除非你明确要 fail-fast
+```ts
+type HookName = 'onStartup' | 'onBeforeExecute' | 'onAfterExecute';
+type HookFn = (payload: Record<string, unknown>) => void | Promise<void>;
+
+const HOOKS_KEY = '__octo_hooks__';
+
+export function addHook(name: HookName, fn: HookFn) {
+  const g = globalThis as any;
+  g[HOOKS_KEY] ??= new Map<HookName, HookFn[]>();
+  const map = g[HOOKS_KEY] as Map<HookName, HookFn[]>;
+  const list = map.get(name) ?? [];
+  list.push(fn);
+  map.set(name, list);
+}
+
+export async function runHooks(name: HookName, payload: Record<string, unknown>) {
+  const g = globalThis as any;
+  const map = (g[HOOKS_KEY] as Map<HookName, HookFn[]>) ?? new Map();
+  for (const fn of map.get(name) ?? []) {
+    try {
+      await fn(payload);
+    } catch (error) {
+      console.warn(`[hook:${name}]`, error);
+    }
+  }
+}
+```
 
 ### 价值
 
-- 后续插件系统可以直接复用
-- 验证和审计逻辑也能挂在 hook 上
+- 后续插件系统可直接复用
+- 审计、埋点、调试信息都可挂在 hook 上
 
 ---
 
-## 5.8 `validate.ts`
+## 5.9 校验命令：`validate.ts`
 
 ### 目标
 
-提供 `yourcli validate`，检查 adapter 定义是否基本合法。
+提供 `octo validate`，检查 adapter 定义是否合法。
 
 ### 第一版建议覆盖
 
@@ -449,24 +874,49 @@ src/clis/<site>/*.ts
 - 必填字段是否存在
 - `pipeline` 是否为数组
 - `columns` 是否为数组
-- `args` 是否为对象或数组，取决于你的 schema 设计
+- `args` 是否符合约定结构
 - step 名称是否在白名单中
 
-### TS adapter 第一版策略
+### TS adapter 的第一版策略
 
-第一版可以不做 AST 静态校验，只做：
+第一版不做 AST 静态校验，只做：
 
-- 文件可 import
-- import 过程中没有语法错误
+- 文件能否 `import`
+- import 过程中是否有语法错误
+
+### 推荐实现
+
+```ts
+export async function validateAdapters(files: string[]) {
+  const results = [];
+
+  for (const file of files) {
+    try {
+      if (file.endsWith('.ts')) {
+        await import(pathToFileURL(file).href);
+      } else {
+        const raw = await fs.readFile(file, 'utf8');
+        const parsed = yaml.load(raw);
+        parseYamlCli(parsed, file);
+      }
+      results.push({ file, ok: true });
+    } catch (error) {
+      results.push({ file, ok: false, error: String(error) });
+    }
+  }
+
+  return results;
+}
+```
 
 ### 完成定义
 
-- `yourcli validate` 能输出 pass/fail
-- 坏掉的 YAML 会明确提示出错文件和原因
+- `octo validate` 能输出 pass/fail
+- 坏掉的 YAML 能明确提示出错文件和原因
 
 ---
 
-## 5.9 `verify.ts`
+## 5.10 验证命令：`verify.ts`
 
 ### 目标
 
@@ -474,68 +924,102 @@ src/clis/<site>/*.ts
 
 ### 第一版建议策略
 
-- 按 target 执行指定 adapter
-- 对 public / browser=false 的命令跑最小执行
-- 默认不执行需要浏览器的命令
+- 支持按 target 执行指定 adapter
+- 对 `public` / `browser=false` 命令执行最小运行
+- 默认跳过需要浏览器的命令
 
-### 验证内容
+### 推荐实现
 
-- 命令能被发现
-- 参数默认值有效
-- 执行不抛异常
-- 返回值结构基本可渲染
+```ts
+export async function verifyCommands(targets: CliCommand[]) {
+  const results = [];
+
+  for (const cmd of targets) {
+    if (cmd.browser && cmd.strategy !== 'public') {
+      results.push({ command: fullName(cmd), skipped: true });
+      continue;
+    }
+
+    try {
+      const result = await executeCommand(cmd, {}, false);
+      results.push({
+        command: fullName(cmd),
+        ok: true,
+        kind: Array.isArray(result) ? 'list' : typeof result,
+      });
+    } catch (error) {
+      results.push({
+        command: fullName(cmd),
+        ok: false,
+        error: String(error),
+      });
+    }
+  }
+
+  return results;
+}
+```
 
 ### 完成定义
 
-- `yourcli verify demo/hello`
-- `yourcli verify demo`
-- `yourcli verify`
+- `octo verify demo/hello`
+- `octo verify demo`
+- `octo verify`
 
-都能给出稳定输出
-
----
-
-## 5.10 `pipeline/` 最小实现建议
-
-虽然你的需求里没单独列出，但只要要支持 YAML adapter，就建议现在把 pipeline 独立出来。
-
-### 第一版最小 step 集
-
-建议只做这 4 到 6 个：
-
-- `fetch`
-- `map`
-- `filter`
-- `limit`
-- `sort`
-- `tap` 或 `debug`，二选一
-
-### 不建议 Phase A 先做
-
-- `navigate`
-- `click`
-- `type`
-- `wait`
-- `intercept`
-- `download`
-
-这些都天然偏浏览器阶段。
-
-### 推荐的 Phase A YAML 能力边界
-
-第一版的 YAML adapter，重点解决“公共数据获取与变换”：
-
-- 远程 HTTP JSON 拉取
-- 结果字段映射
-- 基础筛选、排序、截断
-
-这已经足够支撑最小内核验证。
+都能给出稳定输出。
 
 ---
 
-## 6. 里程碑拆解
+## 6. Demo Adapter 建议
 
-## 6.1 Milestone A1：项目能启动
+建议在 Phase A 准备两个最小样例，一个验证 YAML pipeline，一个验证 TS func。
+
+### 6.1 YAML adapter
+
+`src/clis/demo/hello.yaml`
+
+用途：
+
+- 验证 `fetch -> map -> limit`
+- 验证 `table/json/yaml/csv`
+- 验证 discovery 与 validate
+
+### 6.2 TS adapter
+
+`src/clis/demo/ping.ts`
+
+```ts
+import { cli } from '../../registry.js';
+
+cli({
+  site: 'demo',
+  name: 'ping',
+  description: 'Return a simple runtime payload',
+  strategy: 'public',
+  browser: false,
+  args: [{ name: 'name', type: 'string', required: false, default: 'world' }],
+  columns: ['message', 'timestamp'],
+  async func(_page, kwargs) {
+    return {
+      message: `hello ${String(kwargs.name ?? 'world')}`,
+      timestamp: new Date().toISOString(),
+      version: 'phase-a',
+    };
+  },
+});
+```
+
+用途：
+
+- 验证 TS 动态导入
+- 验证 `func` 执行链路
+- 验证参数 coercion
+
+---
+
+## 7. 里程碑拆解
+
+## 7.1 Milestone A1：项目能启动
 
 ### 目标
 
@@ -548,22 +1032,15 @@ src/clis/<site>/*.ts
 3. 建立 `src/cli.ts`
 4. 建立 `src/registry.ts`
 5. 写一个硬编码的内建命令 `list`
-6. 让 `yourcli list` 能输出当前 registry 中命令
-
-### 产出
-
-- 项目可启动
-- `yourcli --help`
-- `yourcli list`
+6. 让 `octo list` 能输出当前 registry 中命令
 
 ### 验收标准
 
-- 本地执行无报错
+- `octo --help` 可用
+- `octo list` 可用
 - registry 中至少有 1 到 2 个内建命令
 
----
-
-## 6.2 Milestone A2：动态命令可注册
+## 7.2 Milestone A2：动态命令可注册
 
 ### 目标
 
@@ -579,38 +1056,12 @@ src/clis/<site>/*.ts
 6. 写 1 个 YAML adapter
 7. 写 1 个 TS adapter
 
-### 推荐 demo adapter
-
-#### YAML adapter
-
-`src/clis/demo/hello.yaml`
-
-建议做成一个最小 public 命令，比如：
-
-- 访问一个公开 JSON endpoint
-- `map` 出 `title/url`
-- `limit`
-
-#### TS adapter
-
-`src/clis/demo/ping.ts`
-
-直接返回固定结构数据，例如：
-
-- 当前时间
-- 参数回显
-- 版本号
-
 ### 验收标准
 
-- `yourcli demo hello`
-- `yourcli demo ping`
+- `octo demo hello` 可执行
+- `octo demo ping` 可执行
 
-都能执行成功
-
----
-
-## 6.3 Milestone A3：验证与测试打通
+## 7.3 Milestone A3：验证与测试打通
 
 ### 目标
 
@@ -623,192 +1074,93 @@ src/clis/<site>/*.ts
 3. 实现 `errors.ts`
 4. 实现 `output.ts`
 5. 写单测
-6. 写 1 到 2 个坏样例 fixture 验证错误处理
-
-### 建议测试数量
-
-10 到 20 个单测是合理范围。
-
-建议优先覆盖：
-
-- registry
-- discovery
-- execution
-- output
-- validate
-- verify
-- commanderAdapter
-- errors
+6. 写坏样例 fixture 验证错误处理
 
 ### 验收标准
 
-- `yourcli validate` 可用
-- `yourcli verify` 可用
+- `octo validate` 可用
+- `octo verify` 可用
 - 单测稳定通过
 
 ---
 
-## 7. 任务顺序建议
+## 8. 任务顺序建议
 
-建议严格按下面顺序开发，而不是并行乱铺。
+建议按依赖顺序推进，不要一开始并行摊太开：
 
-### Step 1
-
-搭项目骨架：
-
-- `package.json`
-- `tsconfig.json`
-- `vitest.config.ts`
-- `src/main.ts`
-- `src/cli.ts`
-
-### Step 2
-
-实现 `registry.ts` 和最小 `list`
-
-### Step 3
-
-实现 `discovery.ts`
-
-### Step 4
-
-实现 `execution.ts`
-
-### Step 5
-
-实现最小 `pipeline/`
-
-### Step 6
-
-实现 `commanderAdapter.ts`
-
-### Step 7
-
-补 `output.ts`
-
-### Step 8
-
-补 `errors.ts`
-
-### Step 9
-
-实现 `validate.ts` / `verify.ts`
-
-### Step 10
-
-补测试和样例 adapters
+1. 搭项目骨架：`package.json`、`tsconfig.json`、`vitest.config.ts`、`src/main.ts`、`src/cli.ts`
+2. 实现 `registry.ts` 和最小 `list`
+3. 实现 `discovery.ts`
+4. 实现 `execution.ts`
+5. 实现最小 `pipeline/`
+6. 实现 `commanderAdapter.ts`
+7. 实现 `output.ts`
+8. 实现 `errors.ts`
+9. 实现 `validate.ts` / `verify.ts`
+10. 补测试和 demo adapters
 
 这个顺序的好处是：
 
-- 每一步都有明确反馈
-- 不会太早陷入验证和测试细节
-- 命令发现、命令执行、输出、错误是按依赖顺序生长的
-
----
-
-## 8. 建议接口草案
-
-## 8.1 `CliCommand`
-
-```ts
-export interface CliCommand {
-  site: string;
-  name: string;
-  aliases?: string[];
-  description: string;
-  strategy?: 'public' | 'cookie' | 'header' | 'intercept' | 'ui';
-  browser?: boolean;
-  args: Arg[];
-  columns?: string[];
-  func?: (page: null, kwargs: Record<string, unknown>, debug?: boolean) => Promise<unknown>;
-  pipeline?: Record<string, unknown>[];
-  timeoutSeconds?: number;
-  navigateBefore?: boolean | string;
-  defaultFormat?: 'table' | 'json' | 'yaml' | 'csv';
-  source?: string;
-}
-```
-
-## 8.2 `executeCommand`
-
-```ts
-export async function executeCommand(
-  cmd: CliCommand,
-  rawKwargs: Record<string, unknown>,
-  debug = false,
-): Promise<unknown>
-```
-
-## 8.3 `render`
-
-```ts
-export function render(data: unknown, opts?: {
-  fmt?: string;
-  columns?: string[];
-  title?: string;
-  elapsed?: number;
-}): void
-```
+- 每一步都有明显反馈
+- 不会太早陷入 DSL 和测试细节
+- discovery、execution、output、errors 以最自然的依赖关系生长
 
 ---
 
 ## 9. 测试计划
 
-## 9.1 单测清单建议
+### 单测建议
 
-### `registry.test.ts`
+`registry.test.ts`
 
 - 能注册命令
 - 能覆盖同名命令
 - alias 正常映射
 - `fullName()` 正确
 
-### `discovery.test.ts`
+`discovery.test.ts`
 
 - 能发现 YAML adapter
 - 能发现 TS adapter
 - 非法 YAML 会被记录
 - 不会加载 `.test.ts`
 
-### `execution.test.ts`
+`execution.test.ts`
 
 - 参数类型转换正确
 - `func` 命令可执行
 - `pipeline` 命令可执行
-- 空结果抛 `EmptyResultError`，如果你决定这样设计
 - 超时抛 `TimeoutError`
 
-### `output.test.ts`
+`output.test.ts`
 
 - `table/json/yaml/csv` 四种格式可用
 - 列顺序可控
 - 单对象和数组对象都可输出
 
-### `errors.test.ts`
+`errors.test.ts`
 
 - 各类错误继承自 `CliError`
 - 各类错误具备正确 `exitCode`
 
-### `validate.test.ts`
+`validate.test.ts`
 
 - 合法 YAML 通过
 - 缺字段 YAML 报错
-- 未知 pipeline step 给 warning
+- 未知 pipeline step 报错
 
-### `verify.test.ts`
+`verify.test.ts`
 
 - demo 命令 verify 成功
 - 不存在命令 verify 失败
 
-### `commanderAdapter.test.ts`
+`commanderAdapter.test.ts`
 
 - positional args 收集正确
 - named options 收集正确
 - `--format` 正常工作
 
----
-
-## 9.2 建议 fixture
+### fixture 建议
 
 建议在 `tests/fixtures/` 下准备：
 
@@ -818,13 +1170,13 @@ export function render(data: unknown, opts?: {
 - `good-ts/`
 - `bad-ts-syntax/`
 
-这样 discovery / validate / verify 都可以复用同一批 fixture。
+这样 `discovery`、`validate`、`verify` 可以复用同一批 fixture。
 
 ---
 
 ## 10. 风险与规避
 
-## 10.1 过早做浏览器抽象
+### 10.1 过早做浏览器抽象
 
 风险：
 
@@ -832,57 +1184,57 @@ export function render(data: unknown, opts?: {
 
 规避：
 
-- 只在 `execution.ts` 里留 browser hook 位
+- 只在 `execution.ts` 留 browser hook 位
 - 不实现真实 browser session
 
-## 10.2 YAML 设计过重
+### 10.2 YAML 设计过重
 
 风险：
 
-- 还没跑起来就陷入 DSL 设计
+- 还没跑起来就陷入 DSL 细节
 
 规避：
 
 - 第一版只支持 4 到 6 个 step
 - 能跑通 public fetch 即可
 
-## 10.3 Commander 与执行逻辑耦合
+### 10.3 Commander 与执行逻辑耦合
 
 风险：
 
 - 后续不好测试
-- CLI 层变胖
+- CLI 层会变胖
 
 规避：
 
-- `commanderAdapter.ts` 保持薄层
-- 所有业务执行放 `execution.ts`
+- `commanderAdapter.ts` 只做装配与分发
+- 所有业务执行都放 `execution.ts`
 
-## 10.4 错误模型做得太晚
+### 10.4 错误模型做得太晚
 
 风险：
 
-- 后续模块都抛裸 `Error`
-- CLI 层会充满字符串匹配
+- 模块开始大量抛裸 `Error`
+- CLI 层只能做字符串匹配
 
 规避：
 
-- 在 Milestone A2 之前就把 `errors.ts` 定下来
+- 在 Milestone A2 结束前就把 `errors.ts` 定下来
 
 ---
 
 ## 11. Phase A 完成定义
 
-当以下条件全部满足时，可以认为 Phase A 完成：
+满足以下条件即可认为 Phase A 完成：
 
-1. `yourcli list` 可用
-2. `yourcli validate` 可用
-3. `yourcli verify` 可用
+1. `octo list` 可用
+2. `octo validate` 可用
+3. `octo verify` 可用
 4. YAML adapter 可自动发现并执行
 5. TS adapter 可自动发现并执行
 6. 新增 adapter 不需要修改 CLI 主体代码
 7. 输出至少支持 `table/json/yaml/csv`
-8. 关键错误都有 typed error
+8. 关键错误具备 typed error
 9. 至少有 10 到 20 个单测覆盖核心模块
 10. 整个系统不依赖浏览器也能稳定运行
 
@@ -890,7 +1242,7 @@ export function render(data: unknown, opts?: {
 
 ## 12. 开发节奏建议
 
-如果你希望控制节奏，建议按 5 到 7 天推进：
+如果按一周节奏推进，建议拆成 5 到 7 天：
 
 ### Day 1
 
@@ -926,13 +1278,13 @@ export function render(data: unknown, opts?: {
 - 单测
 - fixture
 - 文档
-- 清理代码结构
+- 清理结构
 
 ---
 
 ## 13. 下一阶段预留口
 
-虽然本阶段不做浏览器，但建议现在就留这些扩展口：
+虽然 Phase A 不做浏览器能力，但建议现在就保留以下字段或模块边界：
 
 - `strategy`
 - `browser`
@@ -942,23 +1294,21 @@ export function render(data: unknown, opts?: {
 - 独立 `pipeline/`
 - `source`
 
-这样到了 Phase B，你只需要新增：
+这样进入 Phase B 时，只需要新增：
 
 - `runtime.ts`
 - `browser/`
 - `daemon`
 - `extension`
 
-而不用推翻 Phase A 内核。
+而不需要推翻 Phase A 内核。
 
 ---
 
 ## 14. 最终建议
 
-如果只给一个实施原则，我会建议你：
+如果只保留一个实施原则，我建议是：
 
-**先把“命令是数据、执行是引擎、CLI 只是外壳”这件事做对。**
+**先把命令模型、执行引擎、输出层、错误层四件事做薄、做稳、做解耦。**
 
-只要这件事做对了，后面无论接浏览器、Electron、插件还是 AI，都还能继续长。
-
-而如果一开始就把 Commander、adapter、输出、执行、错误揉在一起，后面几乎一定会重写。
+只要这四件事做对了，后面无论接浏览器、Electron、插件还是 AI，都还能继续长；如果一开始就把 Commander、adapter、执行、输出、报错揉在一起，后面大概率会进入重写周期。
