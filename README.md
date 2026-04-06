@@ -1,15 +1,43 @@
-# octo-cli
+# OctoCLI
 
-To install dependencies:
+Phase A implementation is complete. The CLI supports:
+
+- dynamic YAML/TS adapter discovery from `src/clis` and `~/.octo/clis`
+- command execution (`func` and pipeline)
+- unified output (`table`, `json`, `yaml`, `csv`)
+- built-in commands: `list`, `validate`, `verify`
+- typed error model and exit codes
+
+## Install
 
 ```bash
 bun install
 ```
 
-To run:
+## Development
 
 ```bash
-bun run index.ts
+bun run dev
 ```
 
-This project was created using `bun init` in bun v1.2.21. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+## Typecheck
+
+```bash
+bun run typecheck
+```
+
+## Test
+
+```bash
+bun run test
+```
+
+## Examples
+
+```bash
+octo list
+octo validate
+octo verify
+octo demo ping
+octo demo hello --format json
+```

@@ -1107,7 +1107,312 @@ cli({
 
 ---
 
-## 9. 测试计划
+## 9. 详细 Todo 清单
+
+下面这份 Todo 清单按“阶段 -> 模块 -> 单任务”拆解，可直接作为后续实施 checklist。此处只定义任务，不代表现在开始实现。
+
+### 9.1 Phase A0：项目初始化与工程基线
+
+- [x] 确认 CLI 名称、包名、二进制名统一使用 `octo`
+- [x] 确认 Node.js 最低版本要求，例如 Node.js 20+
+- [x] 初始化 `package.json`
+- [x] 配置 `type: module`
+- [x] 配置 CLI bin 入口
+- [x] 安装运行时依赖：`commander`、`js-yaml`
+- [x] 安装开发依赖：`typescript`、`vitest`、`@types/node`
+- [x] 创建 `tsconfig.json`
+- [x] 创建 `vitest.config.ts`
+- [x] 约定源码目录 `src/` 与测试目录 `tests/`
+- [x] 创建基础目录：`src/clis`、`src/pipeline`、`tests/fixtures`
+- [x] 确认构建产物目录，例如 `dist/`
+- [x] 增加 `dev` / `build` / `test` / `typecheck` script
+- [x] 确认本地开发启动方式，例如 `tsx` 或 `tsc + node`
+- [x] 定义最小代码风格约定
+- [x] 补充 `.gitignore`
+
+### 9.2 Phase A1：CLI 启动链路
+
+- [x] 创建 `src/main.ts`
+- [x] 创建 `src/cli.ts`
+- [x] 在 `main.ts` 中完成程序启动入口
+- [x] 在 `cli.ts` 中创建根 `Command` 实例
+- [x] 配置 CLI 名称、描述和版本号输出
+- [x] 配置顶层 `--help`
+- [x] 验证 `octo --help` 能正常显示
+- [x] 确定启动时的初始化顺序：内建命令、discovery、动态命令注册、parse
+
+### 9.3 Phase A2：命令注册表
+
+- [x] 创建 `src/registry.ts`
+- [x] 定义 `Strategy`
+- [x] 定义 `OutputFormat`
+- [x] 定义 `ArgType`
+- [x] 定义 `Arg`
+- [x] 定义 `CliCommand`
+- [x] 定义 `fullName()`
+- [x] 实现全局 registry store
+- [x] 实现 `registerCommand()`
+- [x] 导出 `cli()` 注册别名
+- [x] 实现 `getRegistry()`
+- [x] 支持 alias 映射
+- [x] 支持同名命令覆盖
+- [x] 确保 registry 不依赖 Commander
+- [x] 补充 registry 最小单测
+
+### 9.4 Phase A3：内建命令骨架
+
+- [x] 在 `cli.ts` 中定义内建命令注册入口
+- [x] 增加 `list` 命令
+- [x] 设计 `list` 的输出字段
+- [x] 让 `list` 可读取 registry 内容
+- [x] 决定 `list` 默认输出格式
+- [x] 为后续 `validate`、`verify` 预留内建命令挂载位置
+- [x] 验证 `octo list` 在无 adapter 时也能稳定运行
+
+### 9.5 Phase A4：错误模型
+
+- [x] 创建 `src/errors.ts`
+- [x] 实现 `CliError`
+- [x] 实现 `ArgumentError`
+- [x] 实现 `EmptyResultError`
+- [x] 实现 `TimeoutError`
+- [x] 实现 `AuthRequiredError`
+- [x] 实现 `CommandExecutionError`
+- [x] 实现 `AdapterLoadError`
+- [x] 实现 `ValidationError`
+- [x] 实现 `UnknownCommandError`
+- [x] 定义错误 `code`
+- [x] 定义错误 `exitCode`
+- [x] 定义可选 `hint`
+- [x] 约定统一退出码
+- [x] 补充错误模型单测
+
+### 9.6 Phase A5：Hook 基础设施
+
+- [x] 创建 `src/hooks.ts`
+- [x] 定义 `HookName`
+- [x] 定义 `HookFn`
+- [x] 实现 hook store
+- [x] 实现 `addHook()`
+- [x] 实现 `runHooks()`
+- [x] 约定 hook 异常默认只告警不阻断
+- [x] 在启动链路中接入 `onStartup`
+- [x] 在执行链路中预留 `onBeforeExecute`
+- [x] 在执行链路中预留 `onAfterExecute`
+
+### 9.7 Phase A6：YAML schema 与解析
+
+- [x] 创建 `src/yaml-schema.ts`
+- [x] 定义 YAML adapter 的最小字段集合
+- [x] 校验 `site`
+- [x] 校验 `name`
+- [x] 校验 `description`
+- [x] 校验 `args`
+- [x] 校验 `columns`
+- [x] 校验 `pipeline`
+- [x] 校验 `strategy`
+- [x] 校验 `browser`
+- [x] 校验 `defaultFormat`
+- [x] 校验 step 白名单
+- [x] 实现 `parseYamlCli()`
+- [x] 将 YAML 数据转换为 `CliCommand`
+- [x] 为错误信息补充 source file path
+
+### 9.8 Phase A7：Adapter discovery
+
+- [x] 创建 `src/discovery.ts`
+- [x] 实现默认搜索根目录计算
+- [x] 支持扫描 `src/clis`
+- [x] 支持扫描 `~/.octo/clis`
+- [x] 实现目录不存在时静默跳过
+- [x] 实现递归遍历目录
+- [x] 过滤 `.d.ts`
+- [x] 过滤 `.test.ts`
+- [x] 过滤非 `.ts` / `.yaml` / `.yml` 文件
+- [x] 实现 `discoverClisFromFs()`
+- [x] 实现 `isCliModule()`
+- [x] 实现 `registerYamlCli()`
+- [x] 实现 TS adapter `import()` 加载
+- [x] YAML 加载失败时记录 warning
+- [x] TS 加载失败时记录 warning
+- [x] 确保单个坏 adapter 不影响整体 discovery
+- [x] 在 CLI 启动阶段接入 discovery
+- [x] 补 discovery 单测
+
+### 9.9 Phase A8：执行引擎
+
+- [x] 创建 `src/execution.ts`
+- [x] 定义 `executeCommand()`
+- [x] 实现参数默认值填充
+- [x] 实现参数 required 校验
+- [x] 实现参数类型转换
+- [x] 实现 `string` 类型 coercion
+- [x] 实现 `number` 类型 coercion
+- [x] 实现 `boolean` 类型 coercion
+- [x] 为错误参数抛出 `ArgumentError`
+- [x] 接入 `onBeforeExecute`
+- [x] 判断 browser command 是否应在 Phase A 直接拒绝
+- [x] 实现 `func` 执行分支
+- [x] 实现 `pipeline` 执行分支
+- [x] 无执行器时抛 `CommandExecutionError`
+- [x] 实现超时封装
+- [x] 超时时抛 `TimeoutError`
+- [x] 接入 `onAfterExecute`
+- [x] 保持执行层不直接 `console.log`
+- [x] 补执行引擎单测
+
+### 9.10 Phase A9：Pipeline 执行器
+
+- [x] 创建 `src/pipeline/executor.ts`
+- [x] 创建 `src/pipeline/steps/fetch.ts`
+- [x] 创建 `src/pipeline/steps/map.ts`
+- [x] 创建 `src/pipeline/steps/filter.ts`
+- [x] 创建 `src/pipeline/steps/limit.ts`
+- [x] 视需要创建 `src/pipeline/steps/sort.ts`
+- [x] 定义 `PipelineStep` 联合类型
+- [x] 实现 step dispatch
+- [x] 实现 `fetch` step
+- [x] 约定 `fetch` 仅支持 HTTP JSON
+- [x] 实现 `map` step
+- [x] 实现 `filter` step
+- [x] 实现 `limit` step
+- [x] 实现 `sort` step
+- [x] 对未知 step 抛 `ValidationError`
+- [x] 对非法上下文数据给出明确报错
+- [x] 视需要为 step 保留调试输出能力
+- [x] 补 pipeline 单测
+
+### 9.11 Phase A10：Commander 装配层
+
+- [x] 创建 `src/commanderAdapter.ts`
+- [x] 实现 `registerAllCommands()`
+- [x] 按 `site` 对命令分组
+- [x] 为每个 `site` 创建 Commander 子命令
+- [x] 为每个 adapter 创建具体命令
+- [x] 根据 `args` 自动挂 positional args
+- [x] 增加 `--format`
+- [x] 增加 `--verbose`
+- [x] 增加 `--timeout`
+- [x] 收集 positional 参数
+- [x] 收集 named options
+- [x] 归一化 kwargs
+- [x] 调用 `executeCommand()`
+- [x] 调用 `render()`
+- [x] 统一捕获 typed error
+- [x] 设置 `process.exitCode`
+- [x] 补 commander adapter 单测
+
+### 9.12 Phase A11：统一输出层
+
+- [x] 创建 `src/output.ts`
+- [x] 实现 `render()`
+- [x] 实现 `resolveFormat()`
+- [x] 实现 `normalizeRows()`
+- [x] 实现 `renderTable()`
+- [x] 实现 `renderJson()`
+- [x] 实现 `renderYaml()`
+- [x] 实现 `renderCsv()`
+- [x] 支持数组对象输出
+- [x] 支持单对象输出
+- [x] 支持原始值输出
+- [x] 支持 `columns` 控制列顺序
+- [x] 约定空数组输出表现
+- [x] 约定非 TTY 时的默认格式降级
+- [x] 补输出层单测
+
+### 9.13 Phase A12：内建命令 `validate`
+
+- [x] 创建 `src/validate.ts`
+- [x] 实现适配器文件枚举逻辑复用 discovery
+- [x] YAML adapter 执行 schema 校验
+- [x] TS adapter 执行 import 校验
+- [x] 汇总成功 / 失败统计
+- [x] 支持全量校验
+- [x] 支持按 site 校验
+- [x] 支持按具体 command 校验
+- [x] 设计 validate 输出格式
+- [x] 在 `cli.ts` 中注册 `validate`
+- [x] 定义校验失败时的退出码
+- [x] 补 validate 单测
+
+### 9.14 Phase A13：内建命令 `verify`
+
+- [x] 创建 `src/verify.ts`
+- [x] 设计 verify target 解析规则
+- [x] 支持 `octo verify`
+- [x] 支持 `octo verify demo`
+- [x] 支持 `octo verify demo/hello`
+- [x] 跳过需要浏览器的命令
+- [x] 对 public 命令执行 smoke test
+- [x] 汇总成功 / 失败 / skipped
+- [x] 设计 verify 输出格式
+- [x] 在 `cli.ts` 中注册 `verify`
+- [x] 定义 verify 失败时的退出码
+- [x] 补 verify 单测
+
+### 9.15 Phase A14：Demo adapters 与 fixtures
+
+- [x] 创建 `src/clis/demo/hello.yaml`
+- [x] 让 `hello.yaml` 覆盖 `fetch -> map -> limit`
+- [x] 创建 `src/clis/demo/ping.ts`
+- [x] 让 `ping.ts` 返回稳定结构数据
+- [x] 创建 `tests/fixtures/good-yaml`
+- [x] 创建 `tests/fixtures/bad-yaml-missing-name`
+- [x] 创建 `tests/fixtures/bad-yaml-invalid-pipeline`
+- [x] 创建 `tests/fixtures/good-ts`
+- [x] 创建 `tests/fixtures/bad-ts-syntax`
+- [x] 让 fixture 可被 discovery / validate / verify 复用
+
+### 9.16 Phase A15：测试与质量门禁
+
+- [x] 完成 `registry.test.ts`
+- [x] 完成 `discovery.test.ts`
+- [x] 完成 `execution.test.ts`
+- [x] 完成 `commanderAdapter.test.ts`
+- [x] 完成 `output.test.ts`
+- [x] 完成 `errors.test.ts`
+- [x] 完成 `validate.test.ts`
+- [x] 完成 `verify.test.ts`
+- [x] 确保最少 10 到 20 个核心测试用例
+- [x] 跑通 `npm test`
+- [x] 跑通 `npm run typecheck`
+- [x] 修复测试中的不稳定依赖
+- [x] 确认 fixture 与 snapshot 不依赖本机环境
+
+### 9.17 Phase A16：文档与验收
+
+- [x] 更新 `docs/plan_v1.md` 状态说明
+- [x] 根据实现结果修正文档中的接口片段
+- [x] 补充 README 最小使用说明
+- [x] 补充 demo 命令示例
+- [x] 补充开发调试说明
+- [x] 列出 Phase A 已支持与未支持能力
+- [x] 进行一次端到端手工验收
+- [x] 验证 `octo list`
+- [x] 验证 `octo validate`
+- [x] 验证 `octo verify`
+- [x] 验证 `octo demo hello`
+- [x] 验证 `octo demo ping`
+- [x] 确认新增 adapter 不需要修改 CLI 主体
+
+### 9.18 阶段完成判定 Todo
+
+- [x] CLI 能启动且 `--help` 正常
+- [x] `list` / `validate` / `verify` 三个内建命令可用
+- [x] YAML adapter 可自动发现
+- [x] TS adapter 可自动发现
+- [x] YAML adapter 可执行
+- [x] TS adapter 可执行
+- [x] 输出支持 `table/json/yaml/csv`
+- [x] 错误具备统一 `code` 和 `exitCode`
+- [x] 至少有一组 demo adapters
+- [x] 至少有一组错误 fixture
+- [x] 关键测试通过
+- [x] Phase A 在无浏览器依赖下可稳定运行
+
+---
+
+## 10. 测试计划
 
 ### 单测建议
 
@@ -1174,7 +1479,7 @@ cli({
 
 ---
 
-## 10. 风险与规避
+## 11. 风险与规避
 
 ### 10.1 过早做浏览器抽象
 
@@ -1223,7 +1528,7 @@ cli({
 
 ---
 
-## 11. Phase A 完成定义
+## 12. Phase A 完成定义
 
 满足以下条件即可认为 Phase A 完成：
 
@@ -1240,7 +1545,7 @@ cli({
 
 ---
 
-## 12. 开发节奏建议
+## 13. 开发节奏建议
 
 如果按一周节奏推进，建议拆成 5 到 7 天：
 
@@ -1282,7 +1587,7 @@ cli({
 
 ---
 
-## 13. 下一阶段预留口
+## 14. 下一阶段预留口
 
 虽然 Phase A 不做浏览器能力，但建议现在就保留以下字段或模块边界：
 
@@ -1305,7 +1610,7 @@ cli({
 
 ---
 
-## 14. 最终建议
+## 15. 最终建议
 
 如果只保留一个实施原则，我建议是：
 

@@ -1,0 +1,5 @@
+site: fixture
+name: invalid
+description: Invalid pipeline
+pipeline:
+  - use: nope

@@ -1,0 +1,8 @@
+site: fixture
+name: ok
+description: Valid fixture adapter
+strategy: public
+browser: false
+pipeline:
+  - use: fetch
+    url: https://example.com/data

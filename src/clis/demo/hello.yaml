@@ -1,0 +1,23 @@
+site: demo
+name: hello
+description: Fetch demo posts
+strategy: public
+browser: false
+defaultFormat: table
+columns:
+  - id
+  - title
+args:
+  - name: limit
+    type: number
+    required: false
+    default: 3
+pipeline:
+  - use: fetch
+    url: https://jsonplaceholder.typicode.com/posts
+  - use: map
+    pick:
+      id: id
+      title: title
+  - use: limit
+    count: 3
